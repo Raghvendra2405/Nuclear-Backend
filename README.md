@@ -1,64 +1,115 @@
 # Nuclear Backend
 
-Backend service for **Nuclear Mobile** (the React Native app). It does content
-resolution — search, metadata, and (later) stream-URL resolution — so the mobile
-app can stay a thin, App-Store-safe client that just renders results and plays a
-returned stream URL. See `mobile.md` in the nuclear monorepo for the full
-architecture.
+Content-resolution service for the **Nuclear Mobile** app. It handles search,
+metadata, discovery, lyrics, and — critically — turning a track into a playable
+audio stream (via `yt-dlp`). The mobile app is a thin client that renders the
+JSON this service returns and plays the stream URL, so nothing that can't run on
+a phone (binaries, dynamic code) has to.
 
-- **Runtime:** Node + TypeScript (Fastify)
+- **Runtime:** Node 22+ / TypeScript, [Fastify 5](https://fastify.dev/) (ESM, NodeNext)
 - **Data shapes:** mirror `@nuclearplayer/model` (see `src/nuclear-model.ts`)
-- **First provider:** Deezer public API (keyless) for search
+- **Everything keyless works out of the box**; Spotify/Last.fm are optional keys.
 
-## Getting started
+---
 
-```bash
-pnpm install      # or npm install
-pnpm dev          # tsx watch — http://localhost:4000
-```
-
-Build / run compiled:
+## Running locally
 
 ```bash
-pnpm build
-pnpm start
+npm install
+npm run dev      # tsx watch — http://localhost:4000
 ```
+
+Compiled:
+
+```bash
+npm run build    # tsc -> dist/
+npm start        # node dist/server.js
+```
+
+`npm run type-check` type-checks without emitting.
+
+### Configuration
+
+Copy `.env.example` to `.env` (auto-loaded via `process.loadEnvFile`). All keys
+are optional — providers no-op gracefully when a key is absent.
+
+| Var | Purpose | Default |
+|---|---|---|
+| `PORT` | Listen port | `4000` |
+| `NUCLEAR_COUNTRY` | iTunes storefront / charts region (ISO 3166-1 alpha-2) | `in` |
+| `LASTFM_API_KEY` | Recommendations ("You might like") | — |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | Better track search (needs the app owner to have Spotify Premium; otherwise falls back to iTunes) | — |
+| `YTDLP_PATH` | Path to the `yt-dlp` binary | auto-detect |
+
+`yt-dlp` must be reachable: set `YTDLP_PATH`, or have `yt-dlp` on `PATH`
+(the Docker image bundles it). On Windows it also auto-detects the Nuclear
+desktop copy under `%APPDATA%`.
+
+---
 
 ## Endpoints
 
-### `GET /health`
-Liveness check → `{ "ok": true, "service": "nuclear-backend" }`.
-
-### `GET /search`
-Search Deezer, returns `@nuclearplayer/model`-shaped `SearchResults`.
-
-| Query param | Default | Notes |
-|---|---|---|
-| `q` (required) | — | Search query |
-| `types` | `artists,albums,tracks` | Comma-separated subset of `artists`, `albums`, `tracks` |
-| `limit` | `20` | Clamped to 1–50 |
-
-Example:
-
-```bash
-curl "http://localhost:4000/search?q=radiohead&types=artists,tracks&limit=5"
-```
-
-### Other endpoints
+All responses are `@nuclearplayer/model`-shaped JSON.
 
 | Endpoint | Params | Returns |
 |---|---|---|
-| `GET /resolve-stream` | `q` or `title`(+`artist`) or `url` | `StreamCandidate` (playable URL via yt-dlp/YouTube) |
-| `GET /artist` | `id` (iTunes artist id) | `{ name, artwork, genres, topTracks, albums }` |
-| `GET /album` | `id` (iTunes collection id) | `Album` with full `tracks` |
-| `GET /dashboard` | `country` (default `us`) | `{ sections: [{ id, title, tracks }] }` — region-aware charts |
-| `GET /discovery` | `artist`, `limit` | `{ tracks }` — "more like this" |
-| `GET /lyrics` | `title`, `artist`, `duration?` | `{ plain?, synced?: [{timeMs,text}], source }` (lrclib) |
+| `GET /health` | — | `{ ok, service, providers: {...} }` |
+| `GET /search` | `q` (required), `types` (`artists,albums,tracks`), `limit` (1–100) | `SearchResults` |
+| `GET /resolve-stream` | `q` **or** `title`(+`artist`), optional `duration`; **or** `url` | `StreamCandidate` (playable stream) |
+| `GET /stream` | `url` (googlevideo only) | Proxied audio bytes (Range-aware) |
+| `GET /artist` | `id` (iTunes numeric or MusicBrainz UUID) | Artist detail (top tracks + albums) |
+| `GET /album` | `id` | `Album` with full track listing |
+| `GET /dashboard` | `country?` | `{ sections: [{ id, title, tracks }] }` — region-aware charts |
+| `GET /discovery` | `artist`, `limit?` | `{ tracks }` |
+| `GET /recommendations` | `artist` (required), `track?`, `limit?` | `{ tracks }` (artwork-enriched) |
+| `GET /playlists` | `limit?` | `{ playlists }` (Deezer editorial) |
+| `GET /playlist` | `id` | Playlist detail with tracks |
+| `GET /lyrics` | `title`, `artist`, `duration?` | `{ plain?, synced?: [{ timeMs, text }], source }` |
 
-Sources: **iTunes** (search/metadata/charts), **YouTube via yt-dlp** (streams), **lrclib.net** (lyrics).
+### The `by` search syntax
 
-## Roadmap (next)
+`q=red by seedhe maut` is parsed as *title* `red` + *artist* `seedhe maut`. Tracks
+are searched on the combined term **and** a fielded MusicBrainz lookup, then
+re-ranked so the exact title+artist match leads — this surfaces songs that a
+plain search ranks away.
 
-- Stream caching (googlevideo URLs expire); response caching for metadata
-- Region-aware provider routing / selection
-- Decide hosting model (shared vs. self-hostable) — see `mobile.md`
+```bash
+curl "http://localhost:4000/search?q=red%20by%20seedhe%20maut&types=tracks"
+```
+
+### Sources
+
+iTunes (search / artist / album / charts), YouTube via **yt-dlp** (streams),
+MusicBrainz (keyless search breadth), Deezer (editorial playlists), Last.fm
+(recommendations), Spotify (optional track search), lrclib.net (lyrics).
+
+---
+
+## Deployment (Docker)
+
+The included `Dockerfile` builds the app and bundles the standalone `yt-dlp`
+Linux binary (no system Python needed). The server binds `0.0.0.0:$PORT` and
+reads secrets from the environment, so it runs on any container host.
+
+**Render** (via `render.yaml` blueprint): push this repo to GitHub → Render →
+*New + → Blueprint* → select the repo → set the secret env vars when prompted →
+deploy. You get an HTTPS URL; point the app's `EXPO_PUBLIC_BACKEND_URL` at it.
+
+Any Docker host works the same way (`docker build -t nuclear-backend . && docker
+run -p 4000:4000 --env-file .env nuclear-backend`).
+
+---
+
+## Notes
+
+- **Caching** (`src/cache.ts`, in-memory TTL): search 60s, artist/album/dashboard
+  10m, playlists 30m, recommendations 5m, lyrics 1h, **resolve-stream 2h** (avoids
+  re-running yt-dlp; under the ~6h googlevideo URL lifetime).
+- **`/stream` is host-restricted** to `*.googlevideo.com` so it can't be used as
+  an open proxy / SSRF vector.
+- **Timeouts + circuit breaker** (`src/http.ts`): every provider call is bounded;
+  iTunes is skipped for 30s after a failure and search falls back to MusicBrainz,
+  so one slow source never fails the whole request.
+- **datacenter-IP caveat:** YouTube sometimes shows a bot-check to cloud IPs that
+  doesn't happen from a home connection. If resolution fails after deploy, supply
+  YouTube cookies to yt-dlp (`--cookies`) or route through a residential proxy.

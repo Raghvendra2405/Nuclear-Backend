@@ -420,6 +420,25 @@ app.get('/lyrics', async (request, reply) => {
   }
 });
 
+// Only proxy audio from the CDNs our resolvers actually return (YouTube's
+// googlevideo). This keeps /stream from being an open proxy / SSRF vector —
+// without it, any caller could make the host fetch arbitrary or internal URLs.
+const STREAM_HOST_ALLOWLIST = ['googlevideo.com'];
+
+function isAllowedStreamUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  const host = u.hostname.toLowerCase();
+  return STREAM_HOST_ALLOWLIST.some(
+    (base) => host === base || host.endsWith(`.${base}`),
+  );
+}
+
 // Audio proxy: the client plays via the backend so the stream is fetched with
 // the same IP/network yt-dlp used (YouTube IP-binds URLs), and so playback works
 // even when the client device has no direct internet (e.g. over USB/adb). Range
@@ -428,6 +447,9 @@ app.get('/stream', async (request, reply) => {
   const { url } = request.query as { url?: string };
   if (!url) {
     return reply.code(400).send({ error: 'Missing required query param "url"' });
+  }
+  if (!isAllowedStreamUrl(url)) {
+    return reply.code(400).send({ error: 'URL host not allowed' });
   }
   try {
     const range = request.headers.range;
