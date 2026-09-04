@@ -1,0 +1,20 @@
+# Render blueprint — deploys the backend as a Docker web service.
+# In Render: New + > Blueprint, point at this repo. Render builds the Dockerfile,
+# assigns $PORT, and gives an HTTPS URL. Secret keys are prompted (sync:false),
+# never committed.
+services:
+  - type: web
+    name: nuclear-backend
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NUCLEAR_COUNTRY
+        value: in
+      - key: LASTFM_API_KEY
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false

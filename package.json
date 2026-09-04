@@ -1,0 +1,21 @@
+{
+  "name": "nuclear-backend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Nuclear Mobile backend service — search, metadata, and stream resolution for the thin-client mobile app.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.2"
+  }
+}
