@@ -248,11 +248,40 @@ app.get('/resolve-stream', async (request, reply) => {
 // loaded / the provider is reachable, plus the real yt-dlp error. Also probes
 // the provider HTTP server directly. Intentionally ungated for quick diagnosis.
 app.get('/debug/ytdlp', async (request, reply) => {
-  const { q, title, artist, client } = request.query as ResolveStreamQuery & {
+  const { q, title, artist, client, full } = request.query as ResolveStreamQuery & {
     client?: string;
+    full?: string;
   };
   const query =
     q?.trim() || [artist?.trim(), title?.trim()].filter(Boolean).join(' ') || 'believer imagine dragons';
+
+  // ?full=1 runs the REAL two-step resolveStream() and returns its result or the
+  // exact caught error — so we can see why /resolve-stream fails without digging
+  // through Render logs.
+  if (full === '1') {
+    const started = Date.now();
+    try {
+      const candidate = await resolveStream({ query });
+      return reply.send({
+        mode: 'full',
+        ok: true,
+        ms: Date.now() - started,
+        id: candidate.id,
+        title: candidate.title,
+        bitrateKbps: candidate.stream.bitrateKbps,
+        container: candidate.stream.container,
+        host: new URL(candidate.stream.url).host,
+      });
+    } catch (err) {
+      return reply.send({
+        mode: 'full',
+        ok: false,
+        ms: Date.now() - started,
+        error: err instanceof Error ? err.message : String(err),
+        name: err instanceof Error ? err.name : undefined,
+      });
+    }
+  }
 
   // Optional ?client=tv_simply,android,ios to test which YouTube player client(s)
   // get past the datacenter bot-check with the PO token.
