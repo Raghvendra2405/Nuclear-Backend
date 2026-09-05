@@ -248,9 +248,17 @@ app.get('/resolve-stream', async (request, reply) => {
 // loaded / the provider is reachable, plus the real yt-dlp error. Also probes
 // the provider HTTP server directly. Intentionally ungated for quick diagnosis.
 app.get('/debug/ytdlp', async (request, reply) => {
-  const { q, title, artist } = request.query as ResolveStreamQuery;
+  const { q, title, artist, client } = request.query as ResolveStreamQuery & {
+    client?: string;
+  };
   const query =
     q?.trim() || [artist?.trim(), title?.trim()].filter(Boolean).join(' ') || 'believer imagine dragons';
+
+  // Optional ?client=tv_simply,android,ios to test which YouTube player client(s)
+  // get past the datacenter bot-check with the PO token.
+  const extraArgs = client
+    ? ['--extractor-args', `youtube:player_client=${client}`]
+    : [];
 
   const potBaseUrl = process.env.POT_PROVIDER_BASE_URL ?? null;
 
@@ -276,14 +284,16 @@ app.get('/debug/ytdlp', async (request, reply) => {
     providerLog = `(no log: ${String(err)})`;
   }
 
-  const r = await debugYtDlp(query);
+  const r = await debugYtDlp(query, extraArgs);
   return reply.send({
     query,
+    client: client ?? '(default)',
     potBaseUrl,
     providerProbe,
     providerLog,
     args: r.args,
     exitCode: r.code,
+    ok: r.code === 0,
     // The lines that reveal whether the plugin loaded and the provider responded.
     potLines: r.stderr
       .split('\n')

@@ -199,8 +199,9 @@ const scoreCandidate = (
 // and "why did extraction fail" for the gated /debug/ytdlp endpoint.
 export const debugYtDlp = (
   query: string,
+  extraArgs: string[] = [],
 ): Promise<{ code: number | null; stdout: string; stderr: string; args: string[] }> => {
-  const args = ['-v', '-J', '--no-playlist', ...COMMON_ARGS, `ytsearch1:${query}`];
+  const args = ['-v', '-J', '--no-playlist', ...COMMON_ARGS, ...extraArgs, `ytsearch1:${query}`];
   return new Promise((resolve) => {
     const proc = spawn(resolveYtDlpPath(), args, { windowsHide: true });
     let stdout = '';
