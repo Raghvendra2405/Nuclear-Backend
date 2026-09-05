@@ -27,7 +27,7 @@ import {
   searchMusicBrainzTracks,
 } from './providers/musicbrainz.js';
 import { searchSpotifyTracks, spotifyEnabled } from './providers/spotify.js';
-import { resolveStream, StreamNotFoundError } from './providers/ytdlp.js';
+import { debugYtDlp, resolveStream, StreamNotFoundError } from './providers/ytdlp.js';
 
 // Categories the Deezer provider currently supports. Playlists are part of the
 // model's SearchResults but not yet wired here.
@@ -240,6 +240,46 @@ app.get('/resolve-stream', async (request, reply) => {
     }
     return reply.code(502).send({ error: 'Stream resolution failed' });
   }
+});
+
+// TEMPORARY diagnostic — REMOVE once stream resolution is confirmed working in
+// prod. Runs yt-dlp verbosely and reports whether the bgutil PO-token plugin
+// loaded / the provider is reachable, plus the real yt-dlp error. Also probes
+// the provider HTTP server directly. Intentionally ungated for quick diagnosis.
+app.get('/debug/ytdlp', async (request, reply) => {
+  const { q, title, artist } = request.query as ResolveStreamQuery;
+  const query =
+    q?.trim() || [artist?.trim(), title?.trim()].filter(Boolean).join(' ') || 'believer imagine dragons';
+
+  const potBaseUrl = process.env.POT_PROVIDER_BASE_URL ?? null;
+
+  // Probe the PO-token provider server directly (is the process up?).
+  let providerProbe: unknown = 'not configured';
+  if (potBaseUrl) {
+    try {
+      const res = await fetch(`${potBaseUrl}/ping`, { signal: AbortSignal.timeout(5000) });
+      providerProbe = { status: res.status, body: (await res.text()).slice(0, 300) };
+    } catch (err) {
+      providerProbe = { error: String(err) };
+    }
+  }
+
+  const r = await debugYtDlp(query);
+  const tail = (s: string, n = 6000) => (s.length > n ? s.slice(-n) : s);
+  return reply.send({
+    query,
+    potBaseUrl,
+    providerProbe,
+    args: r.args,
+    exitCode: r.code,
+    // The lines that reveal whether the plugin loaded and the provider responded.
+    potLines: r.stderr
+      .split('\n')
+      .filter((l) => /pot|bgutil|token/i.test(l))
+      .slice(0, 15),
+    stderrTail: tail(r.stderr),
+    stdoutHead: r.stdout.slice(0, 400),
+  });
 });
 
 // Artist detail: top tracks + albums for an iTunes artist id.

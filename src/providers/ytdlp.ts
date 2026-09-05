@@ -181,6 +181,33 @@ const scoreCandidate = (
   return score;
 };
 
+// Diagnostic runner (never throws): runs yt-dlp verbosely for a search query
+// and returns raw output. yt-dlp writes its `-v` debug lines — including the
+// `[youtube] [pot] PO Token Providers: bgutil:http-...` line and any YouTube
+// bot-block message — to stderr, so this surfaces both "did the plugin load"
+// and "why did extraction fail" for the gated /debug/ytdlp endpoint.
+export const debugYtDlp = (
+  query: string,
+): Promise<{ code: number | null; stdout: string; stderr: string; args: string[] }> => {
+  const args = ['-v', '-J', '--no-playlist', ...POT_ARGS, `ytsearch1:${query}`];
+  return new Promise((resolve) => {
+    const proc = spawn(resolveYtDlpPath(), args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => proc.kill(), 60000);
+    proc.stdout.on('data', (d) => (stdout += d.toString()));
+    proc.stderr.on('data', (d) => (stderr += d.toString()));
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ code: null, stdout, stderr: `${stderr}\nSPAWN ERROR: ${String(err)}`, args });
+    });
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr, args });
+    });
+  });
+};
+
 export const resolveStream = async (input: {
   query?: string;
   url?: string;
