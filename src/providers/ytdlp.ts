@@ -91,7 +91,11 @@ const resolveYtDlpPath = (): string => {
   return 'yt-dlp';
 };
 
-const runYtDlp = (args: string[], timeoutMs = 30000): Promise<string> =>
+// Default 120s: with cookies + a PO-token round-trip + running node as the JS
+// runtime for signature deciphering, a full extraction on a slow (free-tier)
+// CPU can take well over the old 30s. The 2h resolve cache means only the first
+// play of a track pays this cost.
+const runYtDlp = (args: string[], timeoutMs = 120000): Promise<string> =>
   new Promise((resolve, reject) => {
     const proc = spawn(resolveYtDlpPath(), args, { windowsHide: true });
     let stdout = '';
