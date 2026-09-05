@@ -268,9 +268,9 @@ app.get('/debug/ytdlp', async (request, reply) => {
         ms: Date.now() - started,
         id: candidate.id,
         title: candidate.title,
-        bitrateKbps: candidate.stream.bitrateKbps,
-        container: candidate.stream.container,
-        host: new URL(candidate.stream.url).host,
+        bitrateKbps: candidate.stream?.bitrateKbps,
+        container: candidate.stream?.container,
+        host: candidate.stream?.url ? new URL(candidate.stream.url).host : null,
       });
     } catch (err) {
       return reply.send({
