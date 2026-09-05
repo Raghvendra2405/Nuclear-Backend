@@ -9,7 +9,9 @@
 set -e
 
 echo "[entrypoint] starting bgutil PO-token provider on :4416..."
-( cd /app && node build/main.js --host 0.0.0.0 ) > /tmp/pot-provider.log 2>&1 &
+# The provider CLI takes --port (it binds all interfaces by default); it rejects
+# --host. Default port is already 4416; pass it explicitly for clarity.
+( cd /app && node build/main.js --port 4416 ) > /tmp/pot-provider.log 2>&1 &
 echo "[entrypoint] provider PID $!"
 
 # Wait (best-effort) for the provider to accept connections, and log the result
