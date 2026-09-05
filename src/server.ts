@@ -28,7 +28,7 @@ import {
   searchMusicBrainzTracks,
 } from './providers/musicbrainz.js';
 import { searchSpotifyTracks, spotifyEnabled } from './providers/spotify.js';
-import { debugYtDlp, resolveStream, StreamNotFoundError } from './providers/ytdlp.js';
+import { COOKIES_PATH, debugYtDlp, resolveStream, StreamNotFoundError } from './providers/ytdlp.js';
 
 // Categories the Deezer provider currently supports. Playlists are part of the
 // model's SearchResults but not yet wired here.
@@ -288,6 +288,7 @@ app.get('/debug/ytdlp', async (request, reply) => {
   return reply.send({
     query,
     client: client ?? '(default)',
+    cookiesLoaded: Boolean(COOKIES_PATH),
     potBaseUrl,
     providerProbe,
     providerLog,

@@ -8,7 +8,7 @@
 // Returns a StreamCandidate (with a nested Stream) matching @nuclearplayer/model.
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -33,8 +33,38 @@ const JS_RUNTIME_ARGS = process.env.YTDLP_JS_RUNTIME
   ? ['--js-runtimes', process.env.YTDLP_JS_RUNTIME]
   : [];
 
+// YouTube blocks unauthenticated extraction from datacenter IPs ("Sign in to
+// confirm you're not a bot"), which no client or PO token gets past — only a
+// logged-in cookie jar does. Load cookies (from a burner account) from, in order:
+//   1. YTDLP_COOKIES_B64  — base64 of a Netscape cookies.txt (env/secret),
+//   2. YTDLP_COOKIES_FILE — explicit path to a cookies.txt,
+//   3. /etc/secrets/cookies.txt — Render "Secret File" default mount.
+// We copy whatever we find to a writable temp path because yt-dlp rewrites the
+// jar with rotated cookies as it runs (a read-only secret mount would error).
+export const COOKIES_PATH: string | undefined = (() => {
+  const dest = path.join(os.tmpdir(), 'yt-cookies.txt');
+  try {
+    let content: string | undefined;
+    if (process.env.YTDLP_COOKIES_B64) {
+      content = Buffer.from(process.env.YTDLP_COOKIES_B64, 'base64').toString('utf8');
+    } else {
+      const src = process.env.YTDLP_COOKIES_FILE || '/etc/secrets/cookies.txt';
+      if (existsSync(src)) content = readFileSync(src, 'utf8');
+    }
+    if (content && content.trim()) {
+      writeFileSync(dest, content);
+      return dest;
+    }
+  } catch {
+    // fall through — no cookies available
+  }
+  return undefined;
+})();
+
+const COOKIE_ARGS = COOKIES_PATH ? ['--cookies', COOKIES_PATH] : [];
+
 // Args shared by every YouTube-hitting yt-dlp call.
-const COMMON_ARGS = [...JS_RUNTIME_ARGS, ...POT_ARGS];
+const COMMON_ARGS = [...JS_RUNTIME_ARGS, ...POT_ARGS, ...COOKIE_ARGS];
 
 export class StreamNotFoundError extends Error {
   constructor(message = 'No playable stream found') {
