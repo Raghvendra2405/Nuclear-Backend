@@ -91,6 +91,15 @@ The included `Dockerfile` builds the app and bundles the standalone `yt-dlp`
 Linux binary (no system Python needed). The server binds `0.0.0.0:$PORT` and
 reads secrets from the environment, so it runs on any container host.
 
+**PO-token provider (built in):** the runtime image is based on
+`brainicism/bgutil-ytdlp-pot-provider` and starts that provider on
+`127.0.0.1:4416` alongside the server (see `docker-entrypoint.sh`); the matching
+yt-dlp plugin is dropped in `/etc/yt-dlp/plugins`. This lets yt-dlp mint WebPO
+tokens so YouTube doesn't bot-block resolution from a datacenter IP — the reason
+`/resolve-stream` fails on cloud hosts but works from a home connection. The
+backend passes the provider address to yt-dlp via `POT_PROVIDER_BASE_URL` (set in
+the image; unset locally, so local dev is unaffected).
+
 **Render** (via `render.yaml` blueprint): push this repo to GitHub → Render →
 *New + → Blueprint* → select the repo → set the secret env vars when prompted →
 deploy. You get an HTTPS URL; point the app's `EXPO_PUBLIC_BACKEND_URL` at it.
@@ -110,6 +119,9 @@ run -p 4000:4000 --env-file .env nuclear-backend`).
 - **Timeouts + circuit breaker** (`src/http.ts`): every provider call is bounded;
   iTunes is skipped for 30s after a failure and search falls back to MusicBrainz,
   so one slow source never fails the whole request.
-- **datacenter-IP caveat:** YouTube sometimes shows a bot-check to cloud IPs that
-  doesn't happen from a home connection. If resolution fails after deploy, supply
-  YouTube cookies to yt-dlp (`--cookies`) or route through a residential proxy.
+- **datacenter-IP bot-check:** YouTube shows a bot-check to cloud IPs that doesn't
+  happen from a home connection, which breaks `/resolve-stream` on cloud hosts.
+  Mitigated by the built-in **PO-token provider** (see Deployment). If it ever
+  regresses, the fallbacks are YouTube cookies (`--cookies`) or a residential
+  proxy. Verify a deploy with `yt-dlp -v <url>` showing a `[pot]` provider line,
+  or just hit `/resolve-stream` and confirm a stream URL comes back.

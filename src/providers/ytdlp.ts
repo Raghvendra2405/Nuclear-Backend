@@ -16,6 +16,15 @@ import type { ProviderRef, Stream, StreamCandidate } from '../nuclear-model.js';
 
 const PROVIDER = 'youtube';
 
+// When a bgutil PO-token provider is reachable (set via POT_PROVIDER_BASE_URL in
+// the Docker image), tell yt-dlp where to mint WebPO tokens. YouTube bot-blocks
+// plain yt-dlp from datacenter IPs (Render) with "Sign in to confirm you're not
+// a bot"; a WebPO token gets past that. Empty in local dev (residential IP needs
+// no token), so the yt-dlp commands there are byte-for-byte unchanged.
+const POT_ARGS = process.env.POT_PROVIDER_BASE_URL
+  ? ['--extractor-args', `youtubepot-bgutilhttp:base_url=${process.env.POT_PROVIDER_BASE_URL}`]
+  : [];
+
 export class StreamNotFoundError extends Error {
   constructor(message = 'No playable stream found') {
     super(message);
@@ -185,6 +194,7 @@ export const resolveStream = async (input: {
       '--flat-playlist',
       '-J',
       '--no-warnings',
+      ...POT_ARGS,
       `ytsearch6:${input.query}`,
     ]);
     const flat = JSON.parse(flatOut) as { entries?: FlatEntry[] };
@@ -201,7 +211,13 @@ export const resolveStream = async (input: {
   }
 
   // Step 2: full extraction of the chosen video for its audio formats.
-  const out = await runYtDlp(['-J', '--no-warnings', '--no-playlist', videoUrl]);
+  const out = await runYtDlp([
+    '-J',
+    '--no-warnings',
+    '--no-playlist',
+    ...POT_ARGS,
+    videoUrl,
+  ]);
 
   const json = JSON.parse(out) as YtEntry & { entries?: YtEntry[] };
   const entry: YtEntry | undefined = json.entries ? json.entries[0] : json;
