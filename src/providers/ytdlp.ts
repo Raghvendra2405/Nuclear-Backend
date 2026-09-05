@@ -25,6 +25,17 @@ const POT_ARGS = process.env.POT_PROVIDER_BASE_URL
   ? ['--extractor-args', `youtubepot-bgutilhttp:base_url=${process.env.POT_PROVIDER_BASE_URL}`]
   : [];
 
+// Recent yt-dlp needs an external JavaScript runtime to execute YouTube's player
+// JS (signature / nsig); the standalone binary bundles none and only enables
+// deno by default. In the container node is present, so point yt-dlp at it via
+// YTDLP_JS_RUNTIME=node. Unset in local dev, so nothing changes there.
+const JS_RUNTIME_ARGS = process.env.YTDLP_JS_RUNTIME
+  ? ['--js-runtimes', process.env.YTDLP_JS_RUNTIME]
+  : [];
+
+// Args shared by every YouTube-hitting yt-dlp call.
+const COMMON_ARGS = [...JS_RUNTIME_ARGS, ...POT_ARGS];
+
 export class StreamNotFoundError extends Error {
   constructor(message = 'No playable stream found') {
     super(message);
@@ -189,7 +200,7 @@ const scoreCandidate = (
 export const debugYtDlp = (
   query: string,
 ): Promise<{ code: number | null; stdout: string; stderr: string; args: string[] }> => {
-  const args = ['-v', '-J', '--no-playlist', ...POT_ARGS, `ytsearch1:${query}`];
+  const args = ['-v', '-J', '--no-playlist', ...COMMON_ARGS, `ytsearch1:${query}`];
   return new Promise((resolve) => {
     const proc = spawn(resolveYtDlpPath(), args, { windowsHide: true });
     let stdout = '';
@@ -221,7 +232,7 @@ export const resolveStream = async (input: {
       '--flat-playlist',
       '-J',
       '--no-warnings',
-      ...POT_ARGS,
+      ...COMMON_ARGS,
       `ytsearch6:${input.query}`,
     ]);
     const flat = JSON.parse(flatOut) as { entries?: FlatEntry[] };
@@ -242,7 +253,7 @@ export const resolveStream = async (input: {
     '-J',
     '--no-warnings',
     '--no-playlist',
-    ...POT_ARGS,
+    ...COMMON_ARGS,
     videoUrl,
   ]);
 

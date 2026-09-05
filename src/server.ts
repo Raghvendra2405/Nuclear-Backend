@@ -1,5 +1,6 @@
 import './env.js'; // must be first — loads .env before providers read keys
 
+import { readFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 
 import Fastify from 'fastify';
@@ -264,12 +265,23 @@ app.get('/debug/ytdlp', async (request, reply) => {
     }
   }
 
-  const r = await debugYtDlp(query);
   const tail = (s: string, n = 6000) => (s.length > n ? s.slice(-n) : s);
+
+  // The provider process writes here (see docker-entrypoint.sh); its startup
+  // error, if any, explains why the :4416 probe fails.
+  let providerLog: string;
+  try {
+    providerLog = tail(await readFile('/tmp/pot-provider.log', 'utf8'), 2000);
+  } catch (err) {
+    providerLog = `(no log: ${String(err)})`;
+  }
+
+  const r = await debugYtDlp(query);
   return reply.send({
     query,
     potBaseUrl,
     providerProbe,
+    providerLog,
     args: r.args,
     exitCode: r.code,
     // The lines that reveal whether the plugin loaded and the provider responded.

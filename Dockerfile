@@ -35,6 +35,8 @@ ADD https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/1.
 # Backend -> provider address (read by src/providers/ytdlp.ts). Only set here, so
 # local dev (no provider) leaves the yt-dlp commands unchanged.
 ENV POT_PROVIDER_BASE_URL=http://127.0.0.1:4416
+# Recent yt-dlp needs an external JS runtime for YouTube; node is in this image.
+ENV YTDLP_JS_RUNTIME=node
 
 # ---- backend app (kept out of the provider's /app dir) ----
 WORKDIR /srv
