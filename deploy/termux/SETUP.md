@@ -27,6 +27,19 @@ Open **Termux:Boot** once (so it registers), then Termux.
 - Do the same for **Termux:Boot**.
 - Keep the phone **plugged in** and on **Wi-Fi**.
 
+#### ⚠️ Disable the phantom-process killer (Android 12+ — required)
+On Android 12+ the OS silently kills an app's *child* processes (yt-dlp, and
+even `node`/`ngrok`) after a while — Termux stays open but your backend dies.
+Battery "Unrestricted" does **not** stop this. It must be disabled over **adb
+from a PC** (one-time, survives reboots); it can't be done from Termux alone:
+```bash
+adb shell "settings put global settings_enable_monitor_phantom_procs false"
+adb shell "device_config set_sync_disabled_for_tests persistent"
+adb shell "device_config put activity_manager max_phantom_processes 2147483647"
+```
+Symptom if skipped: after ~a day (or a reboot) the ngrok URL 404s even though
+Termux is still on screen.
+
 ### 3. Install everything (one command bootstrap)
 In Termux:
 ```bash
@@ -70,6 +83,11 @@ Since it's your existing ngrok domain, the app already points here → **just op
 ## Maintenance
 - **When playback breaks** (YouTube changed): on the phone,
   `pip install -U yt-dlp` then re-run `nuclear.sh` (or reboot). **No app rebuild.**
+- **If `/health` works but `/resolve-stream` always times out** (search/metadata
+  fine, only YouTube hangs): the Wi-Fi is black-holing IPv6 to YouTube. `nuclear.sh`
+  now writes `~/.config/yt-dlp/config` with `--force-ipv4` to fix this; verify with
+  `cat ~/.config/yt-dlp/config`. Test directly: `yt-dlp -4 -g https://youtu.be/dQw4w9WgXcQ`
+  should print a `googlevideo.com` URL in a few seconds.
 - **Update the backend code later:** `cd ~/Nuclear-Backend && git pull && npm ci && npm run build`, then re-run `nuclear.sh`.
 - If you ever use a **different** ngrok account (different domain), send me the new
   `https://…` URL and I'll rebuild the app once with it.

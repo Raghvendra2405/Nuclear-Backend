@@ -8,6 +8,26 @@ export PATH="$PREFIX_BIN:$PATH"
 # Keep the CPU awake so Android doesn't suspend the backend in the background.
 termux-wake-lock 2>/dev/null || true
 
+# Force IPv4 for yt-dlp. Many home/mobile Wi-Fi networks advertise IPv6 but
+# black-hole it to YouTube, so yt-dlp hangs at "Downloading webpage" until it
+# times out and /resolve-stream fails — while iTunes/MusicBrainz (IPv4) still
+# work, making it look like "only YouTube is broken". A yt-dlp config file is
+# auto-loaded by *every* yt-dlp call (including the backend's), so this fixes it
+# without touching the backend code. Harmless where IPv6 works (googlevideo is
+# dual-stack). Written idempotently on every start so a fresh install self-heals.
+mkdir -p ~/.config/yt-dlp
+grep -qxF -- '--force-ipv4' ~/.config/yt-dlp/config 2>/dev/null \
+  || echo '--force-ipv4' >> ~/.config/yt-dlp/config
+
+# Self-heal the Termux:Boot auto-start entry so a reboot always brings us back
+# (SETUP step 6 is easy to skip). The boot script just re-invokes this file.
+mkdir -p ~/.termux/boot
+BOOT_SCRIPT=~/.termux/boot/start-nuclear.sh
+if [ ! -f "$BOOT_SCRIPT" ]; then
+  printf '#!%s/bash\nbash ~/Nuclear-Backend/deploy/termux/nuclear.sh\n' "$PREFIX_BIN" > "$BOOT_SCRIPT"
+  chmod +x "$BOOT_SCRIPT"
+fi
+
 # yt-dlp needs a JS runtime for nsig; node is installed.
 export YTDLP_JS_RUNTIME=node
 export YTDLP_PATH="$(command -v yt-dlp)"
