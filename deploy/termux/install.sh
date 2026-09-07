@@ -6,8 +6,10 @@ set -e
 echo "==> Updating Termux packages"
 pkg update -y && pkg upgrade -y
 
-echo "==> Installing node, git, python, ffmpeg"
-pkg install -y nodejs git python ffmpeg
+echo "==> Installing node, git, python, ffmpeg, proot"
+# proot is required by nuclear.sh to run the foreign ngrok Go binary (bind-mounts
+# resolv.conf so its DNS works on Android; see nuclear.sh for the full rationale).
+pkg install -y nodejs git python ffmpeg proot
 
 echo "==> Installing/updating yt-dlp (latest, so YouTube changes don't break it)"
 pip install -U yt-dlp

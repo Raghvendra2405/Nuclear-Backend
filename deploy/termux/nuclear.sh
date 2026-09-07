@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Starts the Nuclear backend + ngrok tunnel and keeps them running.
+# Starts the Nuclear backend and ngrok tunnel and keeps them running.
 # Works when run manually AND as a Termux:Boot script (survives reboots).
 #   Manual:  bash ~/Nuclear-Backend/deploy/termux/nuclear.sh
 PREFIX_BIN="/data/data/com.termux/files/usr/bin"
@@ -44,8 +44,16 @@ cd ~/Nuclear-Backend
 
 echo "[nuclear] starting ngrok tunnel" | tee -a "$LOG"
 cd ~
-# Free ngrok reuses your account's single static domain, so the public URL is
-# the same one baked into the app -> no rebuild needed.
-( while true; do ./ngrok http 4000 --log=stdout >>"$LOG" 2>&1; echo "[nuclear] ngrok exited, restarting" >>"$LOG"; sleep 3; done ) &
+# Free ngrok reuses your account's single static domain (pass it with --url so
+# the public URL is the same one baked into the app -> no rebuild needed).
+# The ngrok binary is a foreign (non-Termux) Go build that reads /etc/resolv.conf
+# for DNS, which does not exist on Android -> it fails with "lookup ... on
+# [::1]:53: connection refused". proot bind-mounts Termux's resolv.conf (real
+# nameservers) onto /etc/resolv.conf so ngrok can resolve.
+RESOLV=/data/data/com.termux/files/usr/etc/resolv.conf
+# proot's seccomp filter deadlocks multithreaded Go programs (ngrok connects but
+# never establishes a session); disabling it makes ngrok work under proot.
+export PROOT_NO_SECCOMP=1
+( while true; do proot -b "$RESOLV":/etc/resolv.conf ./ngrok http --url=marcell-phototopographical-nonhypnotically.ngrok-free.dev 4000 --log=stdout >>"$LOG" 2>&1; echo "[nuclear] ngrok exited, restarting" >>"$LOG"; sleep 3; done ) &
 
 echo "[nuclear] up. Logs: tail -f ~/nuclear.log"
