@@ -1,8 +1,10 @@
 # Run the Nuclear backend on a spare Android phone (Termux)
 
 A spare phone on a charger is a perfect free, always-on, residential server:
-YouTube doesn't bot-block it (so **no cookies**), it runs 24/7 on ~2 W, and
-yt-dlp stays **auto-updatable** (so YouTube changes never need an app rebuild).
+it runs 24/7 on ~2 W and yt-dlp stays **auto-updatable** (so YouTube changes
+never need an app rebuild). YouTube used to trust the residential IP without any
+auth, but it now bot-blocks it too ("Sign in to confirm you're not a bot"), so
+we run a small local **bgutil PO-token provider** (step 3b) instead of cookies.
 
 If you use your **existing ngrok account/token**, the public URL stays the same
 one already baked into the app → **you don't rebuild the app at all.** You just
@@ -47,6 +49,22 @@ pkg install -y git && git clone https://github.com/Raghvendra2405/Nuclear-Backen
 ```
 (Installs node, yt-dlp, ngrok; builds the backend. Takes a few minutes.)
 
+### 3b. Install the bgutil PO-token provider (bypasses YouTube's bot-check)
+YouTube now returns "Sign in to confirm you're not a bot" for the phone too.
+A local WebPO-token provider fixes this without any account/cookies. One-time:
+```bash
+# 1. yt-dlp plugin (auto-loaded by every yt-dlp call)
+pip install -U bgutil-ytdlp-pot-provider
+# 2. token-generation HTTP server (Node). --ignore-scripts skips the heavy,
+#    unused `canvas` native build (needs cairo/pango); the server runs fine
+#    without it. Binds to 127.0.0.1:4416 only.
+cd ~ && git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git
+cd ~/bgutil-ytdlp-pot-provider/server && npm install --ignore-scripts && npx tsc
+```
+`nuclear.sh` starts/supervises the server automatically (and exports
+`POT_PROVIDER_BASE_URL=http://127.0.0.1:4416`). Verify: `curl 127.0.0.1:4416/ping`
+should return `{"server_uptime":...,"version":"2.0.0"}`.
+
 ### 4. Add your ngrok token (same account as before → same URL)
 ```bash
 cd ~ && ./ngrok config add-authtoken <YOUR_NGROK_TOKEN>
@@ -83,6 +101,13 @@ Since it's your existing ngrok domain, the app already points here → **just op
 ## Maintenance
 - **When playback breaks** (YouTube changed): on the phone,
   `pip install -U yt-dlp` then re-run `nuclear.sh` (or reboot). **No app rebuild.**
+- **If `/resolve-stream` fails with "Sign in to confirm you're not a bot"**: the
+  PO-token provider isn't running/reachable. Check `curl 127.0.0.1:4416/ping`;
+  if it fails, rebuild it (`cd ~/bgutil-ytdlp-pot-provider/server && git pull &&
+  npm install --ignore-scripts && npx tsc`) and re-run `nuclear.sh`. Also bump the
+  plugin: `pip install -U bgutil-ytdlp-pot-provider`. Keep plugin + server versions
+  in sync. (A burst of "HTTP 429 Too Many Requests" is a temporary rate-limit —
+  wait it out; the PO token prevents it recurring.)
 - **If `/health` works but `/resolve-stream` always times out** (search/metadata
   fine, only YouTube hangs): the Wi-Fi is black-holing IPv6 to YouTube. `nuclear.sh`
   now writes `~/.config/yt-dlp/config` with `--force-ipv4` to fix this; verify with

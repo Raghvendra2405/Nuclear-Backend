@@ -32,10 +32,30 @@ fi
 export YTDLP_JS_RUNTIME=node
 export YTDLP_PATH="$(command -v yt-dlp)"
 export PORT=4000
-# Residential phone IP -> no YouTube bot-block -> no cookies needed.
+
+# YouTube now bot-blocks even this residential phone IP ("Sign in to confirm
+# you're not a bot") — the old "residential IP -> no cookies needed" assumption
+# no longer holds. The fix is a local bgutil PO-token (WebPO) provider: a small
+# HTTP server on :4416 that mints proof-of-origin tokens, paired with the yt-dlp
+# plugin (pip: bgutil-ytdlp-pot-provider) that fetches them. yt-dlp auto-uses a
+# provider on the default 127.0.0.1:4416; we also export POT_PROVIDER_BASE_URL so
+# the backend passes it explicitly (see src/providers/ytdlp.ts). Install/build is
+# a one-time step documented in deploy/termux/SETUP.md.
+export POT_PROVIDER_BASE_URL=http://127.0.0.1:4416
 
 LOG=~/nuclear.log
 : > "$LOG"
+
+# Start the bgutil PO-token provider (auto-restart if it exits). Without it
+# YouTube extraction fails with the bot-check above. The build/ dir is produced
+# by the one-time SETUP; warn (don't fail) if it's missing so the rest still runs.
+POT_SERVER=~/bgutil-ytdlp-pot-provider/server/build/main.js
+if [ -f "$POT_SERVER" ]; then
+  echo "[nuclear] starting bgutil PO-token provider on :4416" | tee -a "$LOG"
+  ( while true; do node "$POT_SERVER" >>"$LOG" 2>&1; echo "[nuclear] pot-provider exited, restarting" >>"$LOG"; sleep 3; done ) &
+else
+  echo "[nuclear] WARNING: PO-token provider not built ($POT_SERVER missing) — YouTube will bot-block. See deploy/termux/SETUP.md" | tee -a "$LOG"
+fi
 
 echo "[nuclear] starting backend on :$PORT" | tee -a "$LOG"
 cd ~/Nuclear-Backend
