@@ -1,6 +1,7 @@
-node_modules
-dist
-.env
-*.log
-.git
-.DS_Store
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/
+!src/**
+!docker-entrypoint.sh

@@ -7,12 +7,14 @@
 //
 // Returns a StreamCandidate (with a nested Stream) matching @nuclearplayer/model.
 
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 import type { ProviderRef, Stream, StreamCandidate } from '../nuclear-model.js';
+import { youtubeVideoUrl } from '../playback-urls.js';
 
 const PROVIDER = 'youtube';
 
@@ -39,32 +41,32 @@ const JS_RUNTIME_ARGS = process.env.YTDLP_JS_RUNTIME
 //   1. YTDLP_COOKIES_B64  — base64 of a Netscape cookies.txt (env/secret),
 //   2. YTDLP_COOKIES_FILE — explicit path to a cookies.txt,
 //   3. /etc/secrets/cookies.txt — Render "Secret File" default mount.
-// We copy whatever we find to a writable temp path because yt-dlp rewrites the
-// jar with rotated cookies as it runs (a read-only secret mount would error).
-export const COOKIES_PATH: string | undefined = (() => {
-  const dest = path.join(os.tmpdir(), 'yt-cookies.txt');
-  try {
-    let content: string | undefined;
-    if (process.env.YTDLP_COOKIES_B64) {
-      content = Buffer.from(process.env.YTDLP_COOKIES_B64, 'base64').toString('utf8');
-    } else {
-      const src = process.env.YTDLP_COOKIES_FILE || '/etc/secrets/cookies.txt';
-      if (existsSync(src)) content = readFileSync(src, 'utf8');
-    }
-    if (content && content.trim()) {
-      writeFileSync(dest, content);
-      return dest;
-    }
-  } catch {
-    // fall through — no cookies available
+function loadCookies(): string | undefined {
+  if (process.env.YTDLP_COOKIES_B64) {
+    return Buffer.from(process.env.YTDLP_COOKIES_B64, 'base64').toString('utf8');
   }
-  return undefined;
-})();
+  const configured = process.env.YTDLP_COOKIES_FILE;
+  const file = configured || '/etc/secrets/cookies.txt';
+  return configured || existsSync(file) ? readFileSync(file, 'utf8') : undefined;
+}
 
-const COOKIE_ARGS = COOKIES_PATH ? ['--cookies', COOKIES_PATH] : [];
+let cookieContent: string | undefined;
+function configureCookies(): void {
+  const content = loadCookies();
+  if (content !== undefined && !/^# (?:Netscape )?HTTP Cookie File\r?\n/.test(content)) {
+    throw new Error('Expected a Netscape cookies.txt file');
+  }
+  cookieContent = content;
+}
 
 // Args shared by every YouTube-hitting yt-dlp call.
-const COMMON_ARGS = [...JS_RUNTIME_ARGS, ...POT_ARGS, ...COOKIE_ARGS];
+const COMMON_ARGS = [
+  ...(process.env.NODE_ENV === 'production' ? ['--ignore-config'] : []),
+  ...(process.env.YTDLP_FORCE_IPV4 === '1' ? ['--force-ipv4'] : []),
+  ...JS_RUNTIME_ARGS,
+  ...POT_ARGS,
+];
+const shutdown = new AbortController();
 
 export class StreamNotFoundError extends Error {
   constructor(message = 'No playable stream found') {
@@ -91,36 +93,38 @@ const resolveYtDlpPath = (): string => {
   return 'yt-dlp';
 };
 
-// Default 120s: with cookies + a PO-token round-trip + running node as the JS
-// runtime for signature deciphering, a full extraction on a slow (free-tier)
-// CPU can take well over the old 30s. The 2h resolve cache means only the first
-// play of a track pays this cost.
-const runYtDlp = (args: string[], timeoutMs = 120000): Promise<string> =>
+const runYtDlp = (args: string[], timeout: number): Promise<string> =>
   new Promise((resolve, reject) => {
-    const proc = spawn(resolveYtDlpPath(), args, { windowsHide: true });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      proc.kill();
-      reject(new Error('yt-dlp timed out'));
-    }, timeoutMs);
-
-    proc.stdout.on('data', (d) => {
-      stdout += d.toString();
-    });
-    proc.stderr.on('data', (d) => {
-      stderr += d.toString();
-    });
-    proc.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve(stdout);
-      else reject(new Error(`yt-dlp exited ${code}: ${stderr.slice(0, 500)}`));
+    execFile(resolveYtDlpPath(), args, {
+      windowsHide: true,
+      maxBuffer: 8 * 1024 * 1024,
+      timeout,
+      killSignal: 'SIGKILL',
+      signal: shutdown.signal,
+    }, (err, stdout, stderr) => {
+      if (!err) return resolve(stdout);
+      if (err.code === 'ENOENT') return reject(new Error('yt-dlp executable is missing'));
+      if (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+        return reject(new Error('yt-dlp exceeded its output limit'));
+      }
+      if (err.code === 'ABORT_ERR') return reject(new Error('yt-dlp stopped during shutdown'));
+      if (err.killed) return reject(new Error('yt-dlp timed out'));
+      if (/confirm you.re not a bot|sign in to confirm your age/i.test(stderr)) {
+        return reject(new Error('YouTube requested sign-in'));
+      }
+      if (/video unavailable|private video/i.test(stderr)) return reject(new StreamNotFoundError());
+      reject(new Error('yt-dlp extraction failed'));
     });
   });
+
+export async function checkYtDlp(): Promise<void> {
+  configureCookies();
+  await runYtDlp(['--ignore-config', '--version'], 10_000);
+}
+
+export function stopYtDlp(): void {
+  shutdown.abort();
+}
 
 // yt-dlp info-dict format entry (subset we use).
 type YtFormat = {
@@ -226,40 +230,30 @@ const scoreCandidate = (
   return score;
 };
 
-// Diagnostic runner (never throws): runs yt-dlp verbosely for a search query
-// and returns raw output. yt-dlp writes its `-v` debug lines — including the
-// `[youtube] [pot] PO Token Providers: bgutil:http-...` line and any YouTube
-// bot-block message — to stderr, so this surfaces both "did the plugin load"
-// and "why did extraction fail" for the gated /debug/ytdlp endpoint.
-export const debugYtDlp = (
-  query: string,
-  extraArgs: string[] = [],
-): Promise<{ code: number | null; stdout: string; stderr: string; args: string[] }> => {
-  const args = ['-v', '-J', '--no-playlist', ...COMMON_ARGS, ...extraArgs, `ytsearch1:${query}`];
-  return new Promise((resolve) => {
-    const proc = spawn(resolveYtDlpPath(), args, { windowsHide: true });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => proc.kill(), 60000);
-    proc.stdout.on('data', (d) => (stdout += d.toString()));
-    proc.stderr.on('data', (d) => (stderr += d.toString()));
-    proc.on('error', (err) => {
-      clearTimeout(timer);
-      resolve({ code: null, stdout, stderr: `${stderr}\nSPAWN ERROR: ${String(err)}`, args });
-    });
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ code, stdout, stderr, args });
-    });
-  });
-};
-
-export const resolveStream = async (input: {
+type ResolveInput = {
   query?: string;
   url?: string;
   durationSec?: number;
-}): Promise<StreamCandidate> => {
-  let videoUrl = input.url;
+};
+
+export async function resolveStream(input: ResolveInput): Promise<StreamCandidate> {
+  if (!cookieContent) return resolveVideo(input, COMMON_ARGS);
+
+  // yt-dlp can rewrite cookies during extraction. Give each resolution a private
+  // writable copy shared by its search and extraction steps.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'nuclear-yt-'));
+  try {
+    const file = path.join(dir, 'cookies.txt');
+    await writeFile(file, cookieContent, { mode: 0o600 });
+    return await resolveVideo(input, [...COMMON_ARGS, '--cookies', file]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function resolveVideo(input: ResolveInput, args: string[]): Promise<StreamCandidate> {
+  let videoUrl = input.url && youtubeVideoUrl(input.url);
+  if (input.url && !videoUrl) throw new StreamNotFoundError();
 
   if (!videoUrl) {
     // Step 1: fast flat search for the top few candidates, then rank them.
@@ -267,9 +261,10 @@ export const resolveStream = async (input: {
       '--flat-playlist',
       '-J',
       '--no-warnings',
-      ...COMMON_ARGS,
+      ...args,
+      '--',
       `ytsearch6:${input.query}`,
-    ]);
+    ], 30_000);
     const flat = JSON.parse(flatOut) as { entries?: FlatEntry[] };
     const candidates = (flat.entries ?? []).filter((e) => e.id);
     if (candidates.length === 0) throw new StreamNotFoundError();
@@ -280,7 +275,8 @@ export const resolveStream = async (input: {
         ? b
         : a,
     );
-    videoUrl = `https://www.youtube.com/watch?v=${best.id}`;
+    videoUrl = youtubeVideoUrl(`https://www.youtube.com/watch?v=${best.id}`);
+    if (!videoUrl) throw new StreamNotFoundError();
   }
 
   // Step 2: full extraction of the chosen video for its audio formats.
@@ -288,9 +284,10 @@ export const resolveStream = async (input: {
     '-J',
     '--no-warnings',
     '--no-playlist',
-    ...COMMON_ARGS,
+    ...args,
+    '--',
     videoUrl,
-  ]);
+  ], 120_000);
 
   const json = JSON.parse(out) as YtEntry & { entries?: YtEntry[] };
   const entry: YtEntry | undefined = json.entries ? json.entries[0] : json;
@@ -334,4 +331,4 @@ export const resolveStream = async (input: {
     failed: false,
     source,
   };
-};
+}

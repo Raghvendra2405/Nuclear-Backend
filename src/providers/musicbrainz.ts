@@ -3,6 +3,8 @@
 // Cover Art Archive via a constructed URL (no extra request; may 404 silently).
 // Rate limit: ~1 req/sec, and a descriptive User-Agent is required.
 
+import { setTimeout as wait } from 'node:timers/promises';
+
 import type {
   Album,
   AlbumRef,
@@ -92,21 +94,34 @@ export const searchMusicBrainzTracks = async (
 const MBID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isMbid = (id: string): boolean => MBID_RE.test(id);
 
-// MusicBrainz rate-limits to ~1 req/sec and returns 503 when exceeded;
-// retry once after a short wait.
+// Keep fallbacks within MusicBrainz's one-request-per-second limit. Bound the
+// queue so a burst does not add a long delay to metadata requests.
+let nextRequest = Promise.resolve();
+let waiting = 0;
 const mbFetch = async <T>(path: string, retries = 2): Promise<T | null> => {
+  if (waiting >= 4) throw new Error('MusicBrainz request capacity reached');
+  waiting++;
+  const slot = nextRequest;
+  nextRequest = slot.then(() => wait(1_050));
+  await slot;
+  waiting--;
+
   try {
     const res = await fetchT(`${API}/${path}`, { headers: { 'User-Agent': UA } }, 7000);
     if (res.status === 503 && retries > 0) {
-      await new Promise((r) => setTimeout(r, 1300));
+      await res.body?.cancel();
+      await wait(1300);
       return mbFetch<T>(path, retries - 1);
     }
-    if (!res.ok) return null;
+    if (!res.ok) {
+      await res.body?.cancel();
+      return null;
+    }
     return (await res.json()) as T;
   } catch {
-    // network/timeout — one retry
+    // Retry transient network errors through the same request queue.
     if (retries > 0) {
-      await new Promise((r) => setTimeout(r, 800));
+      await wait(800);
       return mbFetch<T>(path, retries - 1);
     }
     return null;

@@ -4,14 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Nuclear Mobile backend service — search, metadata, and stream resolution for the thin-client mobile app.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
-    "fastify": "^5.2.0"
+    "@fastify/rate-limit": "^10.3.0",
+    "fastify": "^5.12.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

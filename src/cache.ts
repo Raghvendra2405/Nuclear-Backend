@@ -2,7 +2,9 @@
 // artist/album, playlists, and — importantly — resolved streams so we don't
 // re-run yt-dlp on every play).
 type Entry = { value: unknown; expiresAt: number };
+const MAX_ENTRIES = 500;
 const store = new Map<string, Entry>();
+const pending = new Map<string, Promise<unknown>>();
 
 export async function cached<T>(
   key: string,
@@ -11,14 +13,26 @@ export async function cached<T>(
 ): Promise<T> {
   const hit = store.get(key);
   if (hit && hit.expiresAt > Date.now()) {
+    store.delete(key);
+    store.set(key, hit);
     return hit.value as T;
   }
-  const value = await produce();
-  store.set(key, { value, expiresAt: Date.now() + ttlMs });
-  // Opportunistic cleanup so the map doesn't grow unbounded.
-  if (store.size > 500) {
-    const now = Date.now();
-    for (const [k, v] of store) if (v.expiresAt <= now) store.delete(k);
+  store.delete(key);
+
+  const existing = pending.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const work = Promise.resolve().then(produce);
+  pending.set(key, work);
+  try {
+    const value = await work;
+    if (store.size >= MAX_ENTRIES) {
+      const oldest = store.keys().next();
+      if (!oldest.done) store.delete(oldest.value);
+    }
+    store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    return value;
+  } finally {
+    pending.delete(key);
   }
-  return value;
 }

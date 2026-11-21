@@ -31,7 +31,11 @@ fi
 # yt-dlp needs a JS runtime for nsig; node is installed.
 export YTDLP_JS_RUNTIME=node
 export YTDLP_PATH="$(command -v yt-dlp)"
+export YTDLP_FORCE_IPV4=1
+export NODE_ENV=production
+export HOST=127.0.0.1
 export PORT=4000
+export TRUST_PROXY_HOPS=1
 # Residential phone IP -> no YouTube bot-block -> no cookies needed.
 
 LOG=~/nuclear.log
@@ -54,6 +58,6 @@ RESOLV=/data/data/com.termux/files/usr/etc/resolv.conf
 # proot's seccomp filter deadlocks multithreaded Go programs (ngrok connects but
 # never establishes a session); disabling it makes ngrok work under proot.
 export PROOT_NO_SECCOMP=1
-( while true; do proot -b "$RESOLV":/etc/resolv.conf ./ngrok http --url=marcell-phototopographical-nonhypnotically.ngrok-free.dev 4000 --log=stdout >>"$LOG" 2>&1; echo "[nuclear] ngrok exited, restarting" >>"$LOG"; sleep 3; done ) &
+( while true; do proot -b "$RESOLV":/etc/resolv.conf ./ngrok http --url=marcell-phototopographical-nonhypnotically.ngrok-free.dev "http://127.0.0.1:$PORT" --log=stdout >>"$LOG" 2>&1; echo "[nuclear] ngrok exited, restarting" >>"$LOG"; sleep 3; done ) &
 
 echo "[nuclear] up. Logs: tail -f ~/nuclear.log"

@@ -1,0 +1,42 @@
+name: nuclear-backend
+
+services:
+  backend:
+    image: nuclear-backend:${NUCLEAR_RELEASE:?Set NUCLEAR_RELEASE to the release image tag}
+    pull_policy: never
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 35s
+    env_file:
+      - path: .env.secrets
+        required: false
+    environment:
+      HOST: 0.0.0.0
+      PORT: '4000'
+      TRUST_PROXY_HOPS: '1'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: local
+
+  caddy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NUCLEAR_HOSTNAME: ${NUCLEAR_HOSTNAME:?Set NUCLEAR_HOSTNAME to the public DNS hostname}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: local
+
+volumes:
+  caddy_data:
+  caddy_config:

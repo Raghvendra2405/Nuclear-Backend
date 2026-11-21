@@ -1,0 +1,7 @@
+{
+	skip_install_trust
+}
+
+{$NUCLEAR_HOSTNAME} {
+	reverse_proxy backend:4000
+}

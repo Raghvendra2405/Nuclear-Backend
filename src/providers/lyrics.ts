@@ -1,5 +1,6 @@
 // Lyrics provider — lrclib.net (keyless, provides both plain and synced lyrics).
 
+import { fetchT } from '../http.js';
 import type { Lyrics, LyricLine } from '../nuclear-model.js';
 
 const API = 'https://lrclib.net/api';
@@ -44,7 +45,7 @@ export const getLyrics = async (
   try {
     const params = new URLSearchParams({ track_name: title, artist_name: artist });
     if (durationSec) params.set('duration', String(Math.round(durationSec)));
-    const res = await fetch(`${API}/get?${params.toString()}`, { headers });
+    const res = await fetchT(`${API}/get?${params.toString()}`, { headers });
     if (res.ok) result = (await res.json()) as LrclibResult;
   } catch {
     // fall through to search
@@ -54,7 +55,7 @@ export const getLyrics = async (
   if (!hasLyrics(result)) {
     try {
       const params = new URLSearchParams({ track_name: title, artist_name: artist });
-      const res = await fetch(`${API}/search?${params.toString()}`, { headers });
+      const res = await fetchT(`${API}/search?${params.toString()}`, { headers });
       if (res.ok) {
         const arr = (await res.json()) as LrclibResult[];
         result = arr.find(hasLyrics) ?? null;

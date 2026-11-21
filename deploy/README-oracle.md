@@ -69,20 +69,26 @@ The resolver needs them (datacenter IP). Paste the same `cookies.txt` we made:
 
 ```bash
 sudo nano /opt/nuclear-backend/cookies.txt      # paste the full cookies.txt, save
+sudo chown root:nuclear-backend /opt/nuclear-backend/cookies.txt
+sudo chmod 0640 /opt/nuclear-backend/cookies.txt
 sudo systemctl restart nuclear-backend
 ```
 
-*(Or `scp` it up: `scp -i <key> cookies.txt ubuntu@<IP>:/tmp/ && sudo mv /tmp/cookies.txt /opt/nuclear-backend/`)*
+If you transfer the file with `scp`, apply the same owner and permissions on
+the VM before restarting the service.
 
 ## 6. Verify
 
 ```bash
 curl https://<subdomain>.duckdns.org/health
+curl --fail https://<subdomain>.duckdns.org/ready
 curl "https://<subdomain>.duckdns.org/resolve-stream?title=Believer&artist=Imagine%20Dragons&duration=204"
 ```
 
 `/health` → `{"ok":true,...}`; `/resolve-stream` → a JSON with a `stream.url`.
 Logs if needed: `journalctl -u nuclear-backend -f`
+Run the smoke test in the [production release guide](../README.md#production-release)
+before switching the mobile app to this host.
 
 ## 7. Tell me the URL
 

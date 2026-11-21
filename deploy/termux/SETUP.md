@@ -76,9 +76,10 @@ Now it comes back automatically after a reboot.
 ## Verify (from your PC or the app phone)
 ```
 https://<your-ngrok-static-domain>/health          -> {"ok":true,...}
+https://<your-ngrok-static-domain>/ready           -> {"ok":true} once yt-dlp is ready
 https://<your-ngrok-static-domain>/resolve-stream?title=Believer&artist=Imagine%20Dragons&duration=204
 ```
-Since it's your existing ngrok domain, the app already points here → **just open the app and play.**
+Before switching traffic, run the smoke test in the [production release guide](../../README.md#production-release) against the ngrok URL. Verify play and seek in the mobile app.
 
 ## Maintenance
 - **When playback breaks** (YouTube changed): on the phone,
@@ -88,6 +89,6 @@ Since it's your existing ngrok domain, the app already points here → **just op
   now writes `~/.config/yt-dlp/config` with `--force-ipv4` to fix this; verify with
   `cat ~/.config/yt-dlp/config`. Test directly: `yt-dlp -4 -g https://youtu.be/dQw4w9WgXcQ`
   should print a `googlevideo.com` URL in a few seconds.
-- **Update the backend code later:** `cd ~/Nuclear-Backend && git pull && npm ci && npm run build`, then re-run `nuclear.sh`.
+- **Update the backend code later:** `cd ~/Nuclear-Backend && git pull --ff-only && npm ci && npm run build`, then reboot so Termux:Boot starts the new build.
 - If you ever use a **different** ngrok account (different domain), send me the new
   `https://…` URL and I'll rebuild the app once with it.

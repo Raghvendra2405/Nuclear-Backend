@@ -35,7 +35,7 @@ apt-get update -y
 apt-get install -y curl git ca-certificates gnupg iptables-persistent
 
 echo "==> [2/9] Node.js 22 (NodeSource)"
-if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | cut -c2-3)" -lt 20 ]]; then
+if ! /usr/bin/node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)' 2>/dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 fi
@@ -54,14 +54,20 @@ else
   git clone "$REPO" "$APP_DIR"
 fi
 cd "$APP_DIR"
-npm ci
+npm ci --ignore-scripts
 npm run build
 
 echo "==> [5/9] Cookies check"
+if ! id nuclear-backend >/dev/null 2>&1; then
+  useradd --system --user-group --no-create-home --shell /usr/sbin/nologin nuclear-backend
+fi
 if [[ ! -s "$COOKIES" ]]; then
   echo "!! WARNING: $COOKIES is missing/empty."
   echo "   Playback will fail until you create it (paste your youtube cookies.txt there),"
   echo "   then: sudo systemctl restart nuclear-backend"
+else
+  chown root:nuclear-backend "$COOKIES"
+  chmod 0640 "$COOKIES"
 fi
 
 echo "==> [6/9] systemd service"
@@ -73,12 +79,24 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=nuclear-backend
+Group=nuclear-backend
 WorkingDirectory=$APP_DIR
 ExecStart=/usr/bin/node $APP_DIR/dist/server.js
-Restart=always
+Restart=on-failure
 RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+CacheDirectory=nuclear-backend
+UMask=0077
 Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
 Environment=PORT=4000
+Environment=TRUST_PROXY_HOPS=1
+Environment=XDG_CACHE_HOME=/var/cache/nuclear-backend
 Environment=YTDLP_PATH=/usr/local/bin/yt-dlp
 Environment=YTDLP_JS_RUNTIME=node
 Environment=YTDLP_COOKIES_FILE=$COOKIES
@@ -105,7 +123,7 @@ if ! command -v caddy >/dev/null 2>&1; then
 fi
 cat >/etc/caddy/Caddyfile <<CADDY
 $DOMAIN {
-    reverse_proxy localhost:4000
+    reverse_proxy 127.0.0.1:4000
 }
 CADDY
 systemctl restart caddy
@@ -127,7 +145,7 @@ echo ""
 echo "=================================================================="
 echo " DONE. Backend URL:  https://$DOMAIN"
 echo ""
-echo " Check it:   curl https://$DOMAIN/health"
+echo " Check it:   curl https://$DOMAIN/ready"
 echo " Logs:       journalctl -u nuclear-backend -f"
 echo ""
 echo " STILL TO DO in the Oracle web console:"

@@ -12,7 +12,7 @@ export type ProviderRef = {
   url?: string;
 };
 
-export type ArtworkPurpose = 'avatar' | 'cover' | 'background' | 'thumbnail';
+type ArtworkPurpose = 'avatar' | 'cover' | 'background' | 'thumbnail';
 
 export type Artwork = {
   url: string;
@@ -56,20 +56,6 @@ export type Track = {
   source: ProviderRef;
 };
 
-export type PlaylistRef = {
-  id: string;
-  name: string;
-  artwork?: ArtworkSet;
-  source: ProviderRef;
-};
-
-export type TrackRef = {
-  title: string;
-  artists: ArtistRef[];
-  artwork?: ArtworkSet;
-  source: ProviderRef;
-};
-
 export type Album = {
   title: string;
   artists: ArtistCredit[];
@@ -108,19 +94,12 @@ export type Lyrics = {
   source: string;
 };
 
-export type SearchCategory = 'artists' | 'albums' | 'tracks' | 'playlists';
-
-export type SearchParams = {
-  query: string;
-  types?: SearchCategory[];
-  limit?: number;
-};
+export type SearchCategory = 'artists' | 'albums' | 'tracks';
 
 export type SearchResults = {
   artists?: ArtistRef[];
   albums?: AlbumRef[];
   tracks?: Track[];
-  playlists?: PlaylistRef[];
 };
 
 export type Stream = {

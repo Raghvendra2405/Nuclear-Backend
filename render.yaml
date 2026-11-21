@@ -7,8 +7,8 @@ services:
     name: nuclear-backend
     runtime: docker
     plan: free
-    healthCheckPath: /health
-    autoDeploy: true
+    healthCheckPath: /ready
+    autoDeployTrigger: 'off'
     envVars:
       - key: NUCLEAR_COUNTRY
         value: in

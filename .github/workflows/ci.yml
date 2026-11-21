@@ -1,0 +1,55 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NUCLEAR_HOSTNAME: localhost
+      NUCLEAR_RELEASE: ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run type-check
+      - run: npm test
+      - run: npm audit --audit-level=moderate
+      - name: Check deployment shell scripts
+        run: |
+          sh -n docker-entrypoint.sh
+          bash -n deploy/oracle-setup.sh
+          bash -n deploy/termux/install.sh
+          bash -n deploy/termux/nuclear.sh
+      - name: Build production image
+        run: docker build --tag nuclear-backend:ci .
+      - name: Check the EC2 stack over HTTPS
+        run: |
+          compose() { docker compose -f deploy/ec2/compose.yml "$@"; }
+          compose config --quiet
+          compose up --detach --wait --wait-timeout 75
+          compose cp caddy:/data/caddy/pki/authorities/local/root.crt "$RUNNER_TEMP/nuclear-ca.crt"
+          curl --fail --silent --show-error --retry 10 --retry-delay 1 --retry-connrefused \
+            --cacert "$RUNNER_TEMP/nuclear-ca.crt" --resolve localhost:443:127.0.0.1 https://localhost/ready
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1/ready -H 'Host: localhost')" = 308
+          compose exec -T backend sh -c 'test "$(id -u)" -ne 0'
+          compose stop backend
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$(compose ps -a -q backend)")" = 0
+      - name: Show container logs
+        if: failure()
+        run: docker compose -f deploy/ec2/compose.yml logs --no-color || true
+      - name: Remove the smoke test stack
+        if: always()
+        run: docker compose -f deploy/ec2/compose.yml down --volumes

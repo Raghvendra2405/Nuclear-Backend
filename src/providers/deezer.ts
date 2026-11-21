@@ -1,17 +1,9 @@
-// Deezer public API provider — powers the /search endpoint.
+// Deezer public API provider for editorial playlists and their tracks.
 // Keyless JSON API (https://api.deezer.com). We map Deezer's shapes onto the
 // @nuclearplayer/model shapes mirrored in ../nuclear-model.ts so the mobile app
 // receives exactly what the desktop plugin/provider system would return.
 
-import type {
-  AlbumRef,
-  ArtistRef,
-  ArtworkSet,
-  ProviderRef,
-  SearchCategory,
-  SearchResults,
-  Track,
-} from '../nuclear-model.js';
+import type { AlbumRef, ArtistRef, ArtworkSet, ProviderRef, Track } from '../nuclear-model.js';
 
 import { fetchT } from '../http.js';
 
@@ -46,12 +38,6 @@ type DeezerTrack = {
   link?: string;
   artist?: DeezerArtist;
   album?: DeezerAlbum;
-};
-
-type DeezerSearchResponse<T> = {
-  data?: T[];
-  total?: number;
-  error?: { type: string; message: string; code: number };
 };
 
 const ref = (id: number | string, url?: string): ProviderRef => ({
@@ -122,61 +108,7 @@ const toTrack = (t: DeezerTrack): Track => ({
   source: ref(t.id, t.link),
 });
 
-const deezerSearch = async <T>(
-  path: string,
-  query: string,
-  limit: number,
-): Promise<T[]> => {
-  const url = `${DEEZER_API}/${path}?q=${encodeURIComponent(query)}&limit=${limit}`;
-  const res = await fetchT(url);
-  if (!res.ok) {
-    throw new Error(`Deezer ${path} failed: ${res.status} ${res.statusText}`);
-  }
-  const json = (await res.json()) as DeezerSearchResponse<T>;
-  if (json.error) {
-    throw new Error(`Deezer ${path} error: ${json.error.message}`);
-  }
-  return json.data ?? [];
-};
-
-export const search = async (
-  query: string,
-  types: SearchCategory[],
-  limit: number,
-): Promise<SearchResults> => {
-  const wanted = new Set(types);
-  const results: SearchResults = {};
-  const tasks: Array<Promise<void>> = [];
-
-  if (wanted.has('artists')) {
-    tasks.push(
-      deezerSearch<DeezerArtist>('search/artist', query, limit).then((data) => {
-        results.artists = data.map(toArtistRef);
-      }),
-    );
-  }
-  if (wanted.has('albums')) {
-    tasks.push(
-      deezerSearch<DeezerAlbum>('search/album', query, limit).then((data) => {
-        results.albums = data.map(toAlbumRef);
-      }),
-    );
-  }
-  if (wanted.has('tracks')) {
-    tasks.push(
-      deezerSearch<DeezerTrack>('search/track', query, limit).then((data) => {
-        results.tracks = data.map(toTrack);
-      }),
-    );
-  }
-
-  await Promise.all(tasks);
-  return results;
-};
-
-// --- Playlists (keyless; works from regions where Deezer track search doesn't) --
-
-export type PlaylistSummary = {
+type PlaylistSummary = {
   id: string;
   name: string;
   artwork?: ArtworkSet;
@@ -184,7 +116,7 @@ export type PlaylistSummary = {
   source: ProviderRef;
 };
 
-export type PlaylistDetail = {
+type PlaylistDetail = {
   name: string;
   artwork?: ArtworkSet;
   tracks: Track[];
@@ -225,7 +157,7 @@ const playlistArtwork = (p: DeezerPlaylist): ArtworkSet | undefined => {
 export const getTopPlaylists = async (limit = 20): Promise<PlaylistSummary[]> => {
   const res = await fetchT(`${DEEZER_API}/chart/0/playlists?limit=${limit}`);
   if (!res.ok) return [];
-  const json = (await res.json()) as DeezerSearchResponse<DeezerPlaylist>;
+  const json = (await res.json()) as { data?: DeezerPlaylist[] };
   return (json.data ?? []).map((p) => ({
     id: String(p.id),
     name: p.title,

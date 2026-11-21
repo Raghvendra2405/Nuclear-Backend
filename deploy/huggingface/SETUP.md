@@ -1,8 +1,8 @@
-# Deploy the Nuclear backend on Hugging Face Spaces (free, no card)
+# Deploy the Nuclear backend on Hugging Face Spaces
 
-Gives an always-on HTTPS backend for stream resolution at
-`https://<username>-nuclear-backend.hf.space`. Metadata runs on-device, so this
-Space only needs yt-dlp + your YouTube cookies.
+Deploys an HTTPS backend for stream resolution at
+`https://<username>-nuclear-backend.hf.space`. Review the Docker Space plan and
+idle behavior before using it for production. [Hugging Face Spaces hardware and lifecycle](https://huggingface.co/docs/hub/spaces-overview)
 
 ## 1. Create the Space
 1. Sign up at https://huggingface.co (no credit card).
@@ -15,7 +15,8 @@ Space only needs yt-dlp + your YouTube cookies.
 ## 2. Add the two files
 In the new Space → **Files** tab → **+ Add file → Create a new file**, twice:
 
-- Filename **`Dockerfile`** → paste the contents of `deploy/huggingface/Dockerfile`.
+- Filename **`Dockerfile`** → paste the contents of `deploy/huggingface/Dockerfile`
+  and set `SOURCE_REF` to the release commit SHA or tag.
 - Filename **`README.md`** → paste the contents of `deploy/huggingface/README.md`
   (keep the `---` header — HF needs it).
 
@@ -36,18 +37,18 @@ When it shows **Running**, open the Space — you should see it's live.
 Your URL is `https://<username>-nuclear-backend.hf.space` (shown on the Space page).
 
 ```
-https://<username>-nuclear-backend.hf.space/health
+https://<username>-nuclear-backend.hf.space/ready
 ```
-→ `{"ok":true,...}`. Then test a resolve:
+Expect `{"ok":true}`. Then test a resolve.
 ```
 https://<username>-nuclear-backend.hf.space/resolve-stream?title=Believer&artist=Imagine%20Dragons&duration=204
 ```
 → JSON containing a `stream.url`. (First call may take ~10–20s cold; then cached.)
 
-## 6. Keep it awake (optional but recommended)
-Free Spaces pause after ~48h with no traffic. You already have an **UptimeRobot**
-account — add an **HTTP(s) monitor** for `https://<username>-nuclear-backend.hf.space/health`
-every 30 min. That keeps it warm 24/7 for free.
+## 6. Test playback from the release host
+
+Run the smoke test in the [production release guide](../../README.md#production-release)
+before switching mobile clients to the Space URL.
 
 ## 7. Hand me the URL
 Give me `https://<username>-nuclear-backend.hf.space` and I'll bake it into the app
@@ -56,9 +57,10 @@ Give me `https://<username>-nuclear-backend.hf.space` and I'll bake it into the 
 ---
 
 ### Notes
-- **Updating the backend later:** edit the `Dockerfile`, change `ARG CACHEBUST=1`
-  to `2` (etc.), commit → the Space rebuilds and re-clones the latest code.
+- **Updating the backend later:** edit `SOURCE_REF` in the Space's `Dockerfile`
+  to the new release commit SHA or tag and commit the change.
 - **Cookies expire** eventually; if playback starts failing, re-export the burner's
   cookies, re-base64 them, and update the `YTDLP_COOKIES_B64` secret. Browsing/search
   keep working regardless (they're on-device).
-- yt-dlp is pulled fresh on each build; rebuild occasionally if YouTube changes.
+- Update the yt-dlp release URL and its published checksum together when
+  upgrading the bundled binary.
