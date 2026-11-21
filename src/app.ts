@@ -1,9 +1,7 @@
 import './env.js'; // must be first — loads .env before providers read keys
 
-import { isIP } from 'node:net';
-
 import rateLimit from '@fastify/rate-limit';
-import Fastify, { LogController, type FastifyRequest } from 'fastify';
+import Fastify, { LogController } from 'fastify';
 
 import { cached } from './cache.js';
 import { envInteger } from './env.js';
@@ -50,12 +48,6 @@ export const app = Fastify({
 await app.register(rateLimit, {
   max: 240,
   timeWindow: '1 minute',
-  ...(process.env.RENDER === 'true' && {
-    keyGenerator: (request: FastifyRequest) => {
-      const ip = request.headers['cf-connecting-ip'];
-      return typeof ip === 'string' && isIP(ip) ? ip : request.ip;
-    },
-  }),
 });
 
 app.addHook('onSend', async (request, reply) => {

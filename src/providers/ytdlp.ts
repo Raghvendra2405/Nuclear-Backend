@@ -18,11 +18,8 @@ import { youtubeVideoUrl } from '../playback-urls.js';
 
 const PROVIDER = 'youtube';
 
-// When a bgutil PO-token provider is reachable (set via POT_PROVIDER_BASE_URL in
-// the Docker image), tell yt-dlp where to mint WebPO tokens. YouTube bot-blocks
-// plain yt-dlp from datacenter IPs (Render) with "Sign in to confirm you're not
-// a bot"; a WebPO token gets past that. Empty in local dev (residential IP needs
-// no token), so the yt-dlp commands there are byte-for-byte unchanged.
+// The Docker image sets POT_PROVIDER_BASE_URL to the bundled bgutil provider.
+// yt-dlp uses it to request YouTube PO tokens when needed.
 const POT_ARGS = process.env.POT_PROVIDER_BASE_URL
   ? ['--extractor-args', `youtubepot-bgutilhttp:base_url=${process.env.POT_PROVIDER_BASE_URL}`]
   : [];
@@ -35,19 +32,13 @@ const JS_RUNTIME_ARGS = process.env.YTDLP_JS_RUNTIME
   ? ['--js-runtimes', process.env.YTDLP_JS_RUNTIME]
   : [];
 
-// YouTube blocks unauthenticated extraction from datacenter IPs ("Sign in to
-// confirm you're not a bot"), which no client or PO token gets past — only a
-// logged-in cookie jar does. Load cookies (from a burner account) from, in order:
-//   1. YTDLP_COOKIES_B64  — base64 of a Netscape cookies.txt (env/secret),
-//   2. YTDLP_COOKIES_FILE — explicit path to a cookies.txt,
-//   3. /etc/secrets/cookies.txt — Render "Secret File" default mount.
+// Load an optional Netscape cookie jar from the configured secret or file.
 function loadCookies(): string | undefined {
   if (process.env.YTDLP_COOKIES_B64) {
     return Buffer.from(process.env.YTDLP_COOKIES_B64, 'base64').toString('utf8');
   }
-  const configured = process.env.YTDLP_COOKIES_FILE;
-  const file = configured || '/etc/secrets/cookies.txt';
-  return configured || existsSync(file) ? readFileSync(file, 'utf8') : undefined;
+  const file = process.env.YTDLP_COOKIES_FILE;
+  return file ? readFileSync(file, 'utf8') : undefined;
 }
 
 let cookieContent: string | undefined;

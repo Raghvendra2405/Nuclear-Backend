@@ -12,6 +12,7 @@ process.env.SPOTIFY_CLIENT_SECRET = '';
 process.env.LASTFM_API_KEY = '';
 process.env.RESOLVE_CONCURRENCY = '1';
 process.env.STREAM_CONCURRENCY = '1';
+process.env.TRUST_PROXY_HOPS = '1';
 
 const mediaUrl = 'https://audio.googlevideo.com/videoplayback';
 const videoUrl = 'https://www.youtube.com/watch?v=abcdefghijk';
@@ -135,12 +136,18 @@ test('audio HEAD returns metadata and leaves the proxy slot available', async (t
   assert.equal(fetchMedia.mock.callCount(), 2);
 });
 
-test('resolver rate limiting leaves liveness available', async () => {
-  const client = { url: '/resolve-stream', remoteAddress: '192.0.2.20' };
+test('resolver rate limits clients behind Caddy and leaves liveness available', async () => {
+  const client = {
+    url: '/resolve-stream',
+    remoteAddress: '192.0.2.10',
+    headers: { 'x-forwarded-for': '192.0.2.20' },
+  };
   for (let i = 0; i < 30; i++) {
     assert.equal((await app.inject(client)).statusCode, 400);
   }
   assert.equal((await app.inject(client)).statusCode, 429);
+  const otherClient = { ...client, headers: { 'x-forwarded-for': '192.0.2.30' } };
+  assert.equal((await app.inject(otherClient)).statusCode, 400);
   assert.equal((await app.inject({ ...client, url: '/health' })).statusCode, 200);
 });
 

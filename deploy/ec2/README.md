@@ -56,7 +56,8 @@ node deploy/smoke-test.mjs "https://$NUCLEAR_HOSTNAME" "$PLAYBACK_VIDEO_URL" "$T
 ```
 
 The smoke test checks metadata, direct and title-based resolution, and HTTP
-byte ranges. Also play and seek in the mobile app over a separate network.
+byte ranges. In the mobile app over a separate network, verify search, first
+playback, repeat playback, and seeking.
 YouTube can treat EC2 IPs differently. Verify live playback before updating
 the app's `EXPO_PUBLIC_BACKEND_URL` or switching DNS.
 
@@ -65,6 +66,9 @@ the app's `EXPO_PUBLIC_BACKEND_URL` or switching DNS.
 - Monitor the public `/ready` endpoint and watch backend logs for `429`, `502`,
   `503`, and high latency. View service status and logs on EC2 with the same
   Compose arguments followed by `ps` or `logs --tail 100`.
+- Rate limits apply per client IP per minute. The default is 240 requests,
+  with route limits of 30 for `/resolve-stream` and 120 for `/stream`. The
+  backend trusts one proxy hop for the client address forwarded by Caddy.
 - Keep the previous verified backend image. To roll back, set `NUCLEAR_RELEASE`
   to its tag, run the Compose `up` command again, and repeat the smoke test.
   Keep the Compose volumes so Caddy can reuse its certificate and renewal state.

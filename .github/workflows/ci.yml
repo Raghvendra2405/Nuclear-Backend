@@ -27,12 +27,8 @@ jobs:
       - run: npm run type-check
       - run: npm test
       - run: npm audit --audit-level=moderate
-      - name: Check deployment shell scripts
-        run: |
-          sh -n docker-entrypoint.sh
-          bash -n deploy/oracle-setup.sh
-          bash -n deploy/termux/install.sh
-          bash -n deploy/termux/nuclear.sh
+      - name: Check the Docker entrypoint syntax
+        run: sh -n docker-entrypoint.sh
       - name: Build production image
         run: docker build --tag nuclear-backend:ci .
       - name: Check the EC2 stack over HTTPS
