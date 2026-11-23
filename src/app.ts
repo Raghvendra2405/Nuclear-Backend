@@ -5,6 +5,7 @@ import Fastify, { LogController } from 'fastify';
 
 import { cached } from './cache.js';
 import { envInteger } from './env.js';
+import { cachedPersistent } from './resolveCache.js';
 import { fetchT } from './http.js';
 import type { SearchCategory, SearchResults, Track } from './nuclear-model.js';
 import { youtubeVideoUrl } from './playback-urls.js';
@@ -272,9 +273,43 @@ type ResolveStreamQuery = {
   duration?: string;
 };
 
-const resolveConcurrency = envInteger('RESOLVE_CONCURRENCY', 2, 1, 16);
+const resolveConcurrency = envInteger('RESOLVE_CONCURRENCY', 5, 1, 32);
 let activeResolutions = 0;
 class ResolverBusyError extends Error {}
+
+// A burst of concurrent requests beyond the concurrency limit used to get an
+// instant 503. Instead, queue briefly for a free slot — smooths a burst of
+// demand into slots freeing up over the next few seconds instead of failing
+// most of it outright — and only give up if a slot hasn't freed within
+// MAX_QUEUE_WAIT_MS.
+const MAX_QUEUE_WAIT_MS = envInteger('RESOLVE_QUEUE_WAIT_MS', 8_000, 0, 60_000);
+const waitQueue: Array<() => void> = [];
+
+function acquireResolveSlot(): Promise<void> {
+  if (activeResolutions < resolveConcurrency) {
+    activeResolutions++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve, reject) => {
+    const onSlot = () => {
+      clearTimeout(timer);
+      activeResolutions++;
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      const idx = waitQueue.indexOf(onSlot);
+      if (idx !== -1) waitQueue.splice(idx, 1);
+      reject(new ResolverBusyError());
+    }, MAX_QUEUE_WAIT_MS);
+    waitQueue.push(onSlot);
+  });
+}
+
+function releaseResolveSlot(): void {
+  activeResolutions--;
+  const next = waitQueue.shift();
+  if (next) next();
+}
 
 // Resolve a playable audio stream for a track. Accepts a free-text `q`, or a
 // `title` (+ optional `artist`) which are combined into a search query, or a
@@ -305,18 +340,19 @@ app.get('/resolve-stream', {
   if (!ytdlpReady) return reply.code(503).send({ error: 'Stream resolver is unavailable' });
 
   try {
-    // Cache the resolution (the slow yt-dlp step) for 2h — under the ~6h
-    // googlevideo URL lifetime — so repeat plays are instant.
-    const candidate = await cached(
+    // Persist the resolution (the slow yt-dlp step) for 2h — under the ~6h
+    // googlevideo URL lifetime — so repeat plays are instant, including
+    // across backend restarts/redeploys (not just within one process's
+    // lifetime), which matters once many users share a song's cache entry.
+    const candidate = await cachedPersistent(
       JSON.stringify(['resolve', directUrl, query, durationSec]),
       2 * 60 * 60 * 1000,
       async () => {
-        if (activeResolutions >= resolveConcurrency) throw new ResolverBusyError();
-        activeResolutions++;
+        await acquireResolveSlot();
         try {
           return await resolveStream({ query, url: directUrl, durationSec });
         } finally {
-          activeResolutions--;
+          releaseResolveSlot();
         }
       },
     );

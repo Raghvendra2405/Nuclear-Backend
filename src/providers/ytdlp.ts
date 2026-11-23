@@ -13,6 +13,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { envInteger } from '../env.js';
 import type { ProviderRef, Stream, StreamCandidate } from '../nuclear-model.js';
 import { youtubeVideoUrl } from '../playback-urls.js';
 
@@ -88,8 +89,25 @@ const resolveYtDlpPath = (): string => {
   return 'yt-dlp';
 };
 
+// Smooth outbound yt-dlp invocations — each makes real requests to YouTube —
+// into a steady trickle rather than letting a burst of concurrent demand hit
+// YouTube all at once. This matters more than raw concurrency for staying
+// under YouTube's abuse-detection radar as traffic grows: it caps how fast
+// *new* extractions can start globally, independent of how many are allowed
+// to run at once (RESOLVE_CONCURRENCY).
+const MIN_INVOCATION_INTERVAL_MS = envInteger('YTDLP_MIN_INTERVAL_MS', 400, 0, 10_000);
+let nextSlotAt = 0;
+
+function paceInvocation(): Promise<void> {
+  const now = Date.now();
+  const waitUntil = Math.max(now, nextSlotAt);
+  nextSlotAt = waitUntil + MIN_INVOCATION_INTERVAL_MS;
+  const delay = waitUntil - now;
+  return delay > 0 ? new Promise((resolve) => setTimeout(resolve, delay)) : Promise.resolve();
+}
+
 const runYtDlp = (args: string[], timeout: number): Promise<string> =>
-  new Promise((resolve, reject) => {
+  paceInvocation().then(() => new Promise((resolve, reject) => {
     execFile(resolveYtDlpPath(), args, {
       windowsHide: true,
       maxBuffer: 8 * 1024 * 1024,
@@ -110,7 +128,7 @@ const runYtDlp = (args: string[], timeout: number): Promise<string> =>
       if (/video unavailable|private video/i.test(stderr)) return reject(new StreamNotFoundError());
       reject(new Error('yt-dlp extraction failed'));
     });
-  });
+  }));
 
 export async function checkYtDlp(): Promise<void> {
   configureCookies();

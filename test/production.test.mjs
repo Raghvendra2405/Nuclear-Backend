@@ -11,6 +11,9 @@ process.env.SPOTIFY_CLIENT_ID = '';
 process.env.SPOTIFY_CLIENT_SECRET = '';
 process.env.LASTFM_API_KEY = '';
 process.env.RESOLVE_CONCURRENCY = '1';
+process.env.RESOLVE_QUEUE_WAIT_MS = '200';
+process.env.YTDLP_MIN_INTERVAL_MS = '0';
+process.env.RESOLVE_CACHE_DB_PATH = ':memory:';
 process.env.STREAM_CONCURRENCY = '1';
 process.env.TRUST_PROXY_HOPS = '1';
 

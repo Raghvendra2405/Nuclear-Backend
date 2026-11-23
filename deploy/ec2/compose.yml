@@ -14,6 +14,12 @@ services:
       HOST: 0.0.0.0
       PORT: '4000'
       TRUST_PROXY_HOPS: '1'
+      RESOLVE_CONCURRENCY: '5'
+      RESOLVE_CACHE_DB_PATH: /home/node/data/resolve-cache.db
+      YTDLP_MIN_INTERVAL_MS: '400'
+    volumes:
+      - backend_ytdlp_cache:/home/node/.cache/yt-dlp
+      - backend_resolve_cache:/home/node/data
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     logging:
@@ -40,3 +46,5 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  backend_ytdlp_cache:
+  backend_resolve_cache:

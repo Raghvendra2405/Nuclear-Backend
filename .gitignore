@@ -7,3 +7,4 @@ dist/
 cookies*.txt
 yt-cookies*.txt
 .DS_Store
+/data/
