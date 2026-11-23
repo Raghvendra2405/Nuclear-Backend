@@ -156,6 +156,9 @@ const mimeForExt = (ext?: string): string | undefined => {
   }
 };
 
+const highestBitrate = (fmts: YtFormat[]): YtFormat =>
+  fmts.reduce((best, f) => ((f.abr ?? 0) > (best.abr ?? 0) ? f : best));
+
 const pickBestAudio = (formats: YtFormat[]): YtFormat | undefined => {
   const audioOnly = formats.filter(
     (f) => f.url && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none'),
@@ -164,7 +167,14 @@ const pickBestAudio = (formats: YtFormat[]): YtFormat | undefined => {
     ? audioOnly
     : formats.filter((f) => f.url && f.acodec && f.acodec !== 'none');
   if (!pool.length) return undefined;
-  return pool.reduce((best, f) => ((f.abr ?? 0) > (best.abr ?? 0) ? f : best));
+
+  // Prefer AAC (mp4a) over opus/webm: the webm/opus adaptive formats have been
+  // observed getting hard 403'd by the CDN for some IPs/sessions while the AAC
+  // formats of the same video play fine — a few kbps of quality is worth the
+  // reliability. Falls back to the overall best (opus included) if no AAC
+  // format is offered for this video.
+  const aac = pool.filter((f) => f.acodec?.startsWith('mp4a'));
+  return highestBitrate(aac.length ? aac : pool);
 };
 
 // Flat search result (fast; no format extraction).
