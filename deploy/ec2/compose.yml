@@ -26,7 +26,7 @@ services:
       backend:
         condition: service_healthy
     environment:
-      NUCLEAR_HOSTNAME: ${NUCLEAR_HOSTNAME:?Set NUCLEAR_HOSTNAME to the public DNS hostname}
+      NUCLEAR_HOSTNAME: ${NUCLEAR_HOSTNAME:?Set NUCLEAR_HOSTNAME to the Caddy site address}
     ports:
       - '80:80'
       - '443:443'

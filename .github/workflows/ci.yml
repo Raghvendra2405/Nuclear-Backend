@@ -43,6 +43,15 @@ jobs:
           compose exec -T backend sh -c 'test "$(id -u)" -ne 0'
           compose stop backend
           test "$(docker inspect --format '{{.State.ExitCode}}' "$(compose ps -a -q backend)")" = 0
+      - name: Check the EC2 stack over HTTP by IP
+        env:
+          NUCLEAR_HOSTNAME: 'http://'
+        run: |
+          compose() { docker compose -f deploy/ec2/compose.yml -f deploy/ec2/compose.ip.yml "$@"; }
+          compose up --detach --wait --wait-timeout 75
+          readiness=$(curl --fail --silent --show-error --retry 10 --retry-delay 1 --retry-connrefused \
+            http://127.0.0.1:4000/ready)
+          test "$readiness" = '{"ok":true}'
       - name: Show container logs
         if: failure()
         run: docker compose -f deploy/ec2/compose.yml logs --no-color || true

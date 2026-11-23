@@ -1,0 +1,4 @@
+services:
+  caddy:
+    ports: !override
+      - '4000:80'

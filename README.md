@@ -104,14 +104,14 @@ HTTPS, playback verification, and rollback.
 The root `Dockerfile` supports Linux amd64 and arm64, verifies the bundled
 yt-dlp and plugin downloads, and runs both processes as the `node` user. The
 token provider listens on `127.0.0.1:4416` inside the container. The EC2 stack
-keeps the backend on the Compose network and publishes Caddy on ports `80`
-and `443`.
+keeps the backend on the Compose network. Caddy publishes ports `80` and `443`
+for HTTPS on a domain, or `4000` for HTTP by public IP.
 
 ### Verify the release candidate
 
 GitHub Actions runs the build, regression tests, dependency audit, and EC2
-stack checks for HTTPS readiness and clean shutdown. For a local container
-smoke check, run the following commands.
+stack checks for HTTP and HTTPS readiness and clean shutdown. For a local
+container smoke check, run the following commands.
 
 ```bash
 docker build -t nuclear-backend .
