@@ -315,9 +315,23 @@ export const getDiscovery = async (
   return rows.map(toTrack);
 };
 
+const includesCI = (haystack: string, needle: string): boolean =>
+  !!needle && haystack.toLowerCase().includes(needle.toLowerCase());
+
+// Loosely checks the returned iTunes artist against the one we asked for —
+// handles combined/featured-artist strings like "Seedhe Maut, Hisab" by
+// matching on any comma/&-separated segment, either direction.
+const artistRoughlyMatches = (returned: string, requested: string): boolean => {
+  const segments = requested.split(/[,&]/).map((s) => s.trim()).filter(Boolean);
+  return segments.some((s) => includesCI(returned, s) || includesCI(s, returned));
+};
+
 // Best-effort cover-art lookup for a track known only by name (e.g. Last.fm
 // recommendations, which ship no usable image). Returns undefined on any miss
-// (empty result, or iTunes circuit open) so callers can fall back gracefully.
+// (empty result, iTunes circuit open, or no artist-matching candidate — iTunes'
+// search can return an unrelated top hit when the real track isn't in its
+// catalog, so an unvalidated result risks a confidently wrong photo) so
+// callers can fall back gracefully.
 export const lookupArtwork = async (
   title: string,
   artistName: string,
@@ -325,8 +339,11 @@ export const lookupArtwork = async (
   try {
     const term = [artistName, title].filter(Boolean).join(' ').trim();
     if (!term) return undefined;
-    const rows = await itunesSearch(term, 'song', 1);
-    return artwork(rows[0]?.artworkUrl100, 'cover');
+    const rows = await itunesSearch(term, 'song', 5);
+    const match = artistName
+      ? rows.find((r) => artistRoughlyMatches(r.artistName ?? '', artistName))
+      : rows[0];
+    return artwork(match?.artworkUrl100, 'cover');
   } catch {
     return undefined;
   }
